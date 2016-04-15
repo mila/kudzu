@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import logging
-
+from wsgiref.simple_server import make_server
+from wsgiref.validate import validator
 from kudzu import LoggingMiddleware
 
 logging.basicConfig(level=logging.DEBUG)
@@ -15,4 +16,13 @@ def example_app(environ, start_response):
     return ['Hello world!\n']
 
 
-application = LoggingMiddleware(example_app)
+application = example_app
+application = validator(application)
+application = LoggingMiddleware(application)
+application = validator(application)
+
+
+if __name__ == '__main__':
+    httpd = make_server('', 8000, application)
+    print "Serving HTTP on port 8000..."
+    httpd.serve_forever()
