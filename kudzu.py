@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 
 import time
 import logging
@@ -15,9 +14,12 @@ def _get_request_uri(environ):
     try:
         rv = environ['REQUEST_URI']
     except KeyError:
-        rv = ''.join([environ.get('SCRIPT_NAME', ''),
-                      environ.get('PATH_INFO', ''),
-                      environ.get('QUERY_STRING', '')])
+        parts = [environ.get('SCRIPT_NAME', ''),
+                 environ.get('PATH_INFO', '')]
+        query = environ.get('QUERY_STRING')
+        if query:
+            parts.extend(['?', query])
+        rv = ''.join(parts)
     return rv
 
 
@@ -38,19 +40,36 @@ class RequestContext(object):
         duration = time.time() - self._start_time
         rv = self._log_vars.copy()
         rv.update({
-            'micros': int(duration * 1e6),
-            'msecs': int(duration * 1e3),
-            'epoch': int(self._start_time),
+            'micros': str(int(duration * 1e6)),
+            'msecs': str(int(duration * 1e3)),
+            'epoch': str(int(self._start_time)),
         })
         return rv
 
     def set_status(self, status):
-        """Sets response status line."""
-        self._log_vars['status'] = status.split(' ', 1)[0]
+        """Sets response status line.
+
+        This method is called from start_response function.
+        """
+        try:
+            status_code = int(status.split(' ', 1)[0])
+        except ValueError:
+            self._log_vars['status'] = '???'
+        else:
+            self._log_vars['status'] = '%s' % status_code
 
     def set_response_size(self, value):
-        """Sets size of response body (without headers) in bytes."""
-        self._log_vars['rsize'] = value
+        """Sets size of response body (without headers) in bytes.
+
+        This method is called if Content-Length header is found
+        in start_response function.
+        """
+        try:
+            size = int(value)
+        except ValueError:
+            self._log_vars['rsize'] = '???'
+        else:
+            self._log_vars['rsize'] = '%s' % size
 
     def _environ_log_vars(self, environ):
         rv = {
@@ -67,11 +86,23 @@ class RequestContext(object):
             'status': '-',
             'micros': '-',
             'msecs': '-',
-            'time': str(self._start_time),
+            'time': str(int(self._start_time)),
             'ctime': time.ctime(self._start_time),
-            'rsize': '?',
+            'rsize': '-',
         }
         return rv
+
+
+def _wrap_start_response(context, start_response):
+    """Wraps start_response function for LoggingMiddleware."""
+    def start_response_wrapper(status, response_headers, exc_info=None):
+        context.set_status(status)
+        for name, value in response_headers:
+            if name.lower() == 'content-length':
+                context.set_response_size(value)
+                break
+        return start_response(status, response_headers, exc_info)
+    return start_response_wrapper
 
 
 class LoggingMiddleware(object):
@@ -87,41 +118,34 @@ class LoggingMiddleware(object):
 
     def __init__(self, app, logger='wsgi'):
         self.app = app
-        if isinstance(logger, basestring):
-            self.logger = logging.getLogger(logger)
-        else:
+        if isinstance(logger, logging.Logger):
             self.logger = logger
+        else:
+            self.logger = logging.getLogger(logger)
 
     def __call__(self, environ, start_response):
         context = RequestContext(environ)
         self.log_request(context)
-        wrapper = self.wrap_start_response(context, start_response)
+        wrapped_start_response = _wrap_start_response(context, start_response)
         try:
-            rv = self.app(environ, wrapper)
+            rv = self.app(environ, wrapped_start_response)
         except:
             self.log_exception(context)
             raise
         self.log_response(context)
         return rv
 
-    def wrap_start_response(self, context, start_response):
-        def start_response_wrapper(status, response_headers, exc_info=None):
-            context.set_status(status)
-            for name, value in response_headers:
-                if name.lower() == 'content-length':
-                    context.set_response_size(value)
-                    break
-            return start_response(status, response_headers, exc_info)
-        return start_response_wrapper
-
     def log_request(self, context):
+        """Logs request. Can be overriden in subclasses."""
         request_message = self.request_format % context.log_vars
         self.logger.info(request_message)
 
     def log_response(self, context):
+        """Logs response. Can be overriden in subclasses."""
         response_message = self.response_format % context.log_vars
         self.logger.info(response_message)
 
     def log_exception(self, context):
+        """Logs exception. Can be overriden in subclasses."""
         exception_message = self.exception_format % context.log_vars
         self.logger.exception(exception_message)
