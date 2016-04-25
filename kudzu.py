@@ -8,6 +8,15 @@ except ImportError:  # pragma: nocover
     import dummy_threading as threading
 
 
+#: List of all variables from request context available for logging
+CONTEXT_VARS = (
+        # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#offsetof
+        'uri', 'method', 'user', 'addr', 'host', 'proto', 'uagent', 'referer',
+        # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#functions
+        'status', 'micros', 'msecs', 'time', 'ctime', 'rsize',
+)
+
+
 def _get_request_uri(environ):
     """Returns REQUEST_URI from WSGI environ
 
@@ -145,8 +154,8 @@ class RequestContext(object):
             self._log_vars['rsize'] = '%s' % size
 
     def _environ_log_vars(self, environ):
-        rv = {
-            # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#offsetof
+        rv = dict.fromkeys(CONTEXT_VARS, '-')
+        rv.update({
             'uri': _get_request_uri(environ),
             'method': environ['REQUEST_METHOD'],
             'user': environ.get('REMOTE_USER', '-'),
@@ -155,14 +164,9 @@ class RequestContext(object):
             'proto': environ['SERVER_PROTOCOL'],
             'uagent': environ.get('HTTP_USER_AGENT', '-'),
             'referer': environ.get('HTTP_REFERER', '-'),
-            # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#functions
-            'status': '-',
-            'micros': '-',
-            'msecs': '-',
             'time': str(int(self._start_time)),
             'ctime': time.ctime(self._start_time),
-            'rsize': '-',
-        }
+        })
         return rv
 
 
@@ -200,8 +204,13 @@ class RequestContextMiddleware(object):
 
 
 class LoggingMiddleware(object):
-    """
-    WSGI middleware which logs all requests and responses
+    """WSGI middleware which logs all requests and responses
+
+    Before and after each request this middleware emits messages to
+    Python standard logging.
+
+    Requires `RequestContextMiddleware` to be executed before this
+    middleware:  `RequestContextMiddleware(LoggingMiddleware(app))`
     """
 
     request_format = ('Request "%(method)s %(proto)s %(uri)s" from %(addr)s, '
@@ -248,3 +257,64 @@ class LoggingMiddleware(object):
         """Logs exception. Can be overridden in subclasses."""
         exception_message = self.exception_format % context.log_vars
         self.logger.exception(exception_message)
+
+
+class RequestContextFilter(object):
+    """Logging filter which injects information about a current request.
+
+    `RequestContextFilter` accepts all log records and extends them by
+    contextual information about the current request. Its constructor takes
+    names of attributes which should be added to log records.
+
+    This filter should be added to logging handlers not to loggers because
+    filters are not executed for records logged by child loggers.
+
+    `RequestContextFilter` depends on `RequestContextMiddleware`
+    to make `RequestContext` globally available.
+
+    Functions `augment_handler` and `augment_logger` simplify configuration
+    of loggers with this instances of this class.
+    """
+
+    def __init__(self, keys):
+        self.keys = tuple(keys)
+
+    def filter(self, record):
+        context = RequestContext.get()
+        log_vars = context.log_vars if context else {}
+        for key in self.keys:
+            value = log_vars.get(key, '-')
+            setattr(record, key, value)
+        return True
+
+
+BASIC_FORMAT = "[%(addr)s] %(levelname)s:%(name)s:%(message)s"
+
+
+def augment_handler(handler, format=BASIC_FORMAT):
+    """Extends format string of a handler by request context placeholders.
+
+    Takes a logging handler instance format string with `CONTEXT_VARS`
+    placeholders. It configures `RequestContextFilter` to extract necessary
+    variables from a `RequestContext`, attaches the filter to the given
+    handler, and replaces handler formatter.
+    """
+    keys = []
+    for key in CONTEXT_VARS:
+        if '%%(%s)' % key in format:
+            keys.append(key)
+    context_filter = RequestContextFilter(keys)
+    handler.formatter = logging.Formatter(format)
+    handler.addFilter(context_filter)
+
+
+def augment_logger(logger=None, format=BASIC_FORMAT):
+    """Extends format string of a logger by request context placeholders.
+
+    It calls `augment_handler` on each handler registered to the given
+    logger. So this function must be called after handlers are configured.
+    """
+    if not isinstance(logger, logging.Logger):
+        logger = logging.getLogger(logger)
+    for handler in logger.handlers:
+        augment_handler(handler, format=format)

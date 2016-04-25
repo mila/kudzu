@@ -12,7 +12,8 @@ import pytest
 from werkzeug.test import EnvironBuilder, run_wsgi_app
 from werkzeug.wrappers import BaseResponse
 
-from kudzu import LoggingMiddleware, RequestContext, RequestContextMiddleware
+from kudzu import LoggingMiddleware, RequestContext, \
+        RequestContextMiddleware, augment_handler, augment_logger
 
 
 class HandlerMock(logging.Handler):
@@ -21,9 +22,11 @@ class HandlerMock(logging.Handler):
     def __init__(self):
         super(HandlerMock, self).__init__()
         self.records = []
+        self.messages = []
 
     def emit(self, record):
         self.records.append(record)
+        self.messages.append(self.format(record))
 
 
 def simple_app(environ, start_response):
@@ -345,3 +348,59 @@ class TestLoggingMiddleware(object):
         app = LoggingMiddleware(simple_app, self.logger)
         with pytest.raises(RuntimeError):
             run_app(app)
+
+
+class TestRequestContextFilter(object):
+
+    format = '["%(method)s %(proto)s %(uri)s" from %(addr)s] %(message)s'
+
+    def setup_method(self, method):
+        self.handler = HandlerMock()
+        self.logger = logging.getLogger('test_kudzu')
+        self.logger.addHandler(self.handler)
+
+    def teardown_method(self, method):
+        self.logger.removeHandler(self.handler)
+
+    def test_augment_handler(self):
+        augment_handler(self.handler, format=self.format)
+        builder = EnvironBuilder()
+        with RequestContext(builder.get_environ()):
+            self.logger.info('Hello %s', 'Kudzu')
+        assert len(self.handler.messages) == 1
+        assert self.handler.messages[0] == \
+            '["GET HTTP/1.1 /" from -] Hello Kudzu'
+
+    def test_augment_logger(self):
+        augment_logger(self.logger, format=self.format)
+        builder = EnvironBuilder()
+        with RequestContext(builder.get_environ()):
+            self.logger.info('Hello %s', 'Kudzu')
+        assert len(self.handler.messages) == 1
+        assert self.handler.messages[0] == \
+            '["GET HTTP/1.1 /" from -] Hello Kudzu'
+
+    def test_augment_logger_by_name(self):
+        augment_logger(self.logger.name, format=self.format)
+        builder = EnvironBuilder()
+        with RequestContext(builder.get_environ()):
+            self.logger.info('Hello %s', 'Kudzu')
+        assert len(self.handler.messages) == 1
+        assert self.handler.messages[0] == \
+            '["GET HTTP/1.1 /" from -] Hello Kudzu'
+
+    def test_log_wo_context(self):
+        augment_logger(self.logger, format=self.format)
+        self.logger.info('Hello %s', 'Kudzu')
+        assert len(self.handler.messages) == 1
+        assert self.handler.messages[0] == '["- - -" from -] Hello Kudzu'
+
+    def test_log_w_context(self):
+        augment_logger(self.logger, format=self.format)
+        builder = EnvironBuilder(path='/foo',
+                                 environ_base={'REMOTE_ADDR': '127.0.0.1'})
+        with RequestContext(builder.get_environ()):
+            self.logger.info('Hello %s', 'Kudzu')
+        assert len(self.handler.messages) == 1
+        assert self.handler.messages[0] == \
+            '["GET HTTP/1.1 /foo" from 127.0.0.1] Hello Kudzu'
