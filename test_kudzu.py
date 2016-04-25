@@ -1,17 +1,22 @@
 
 import logging
-import time
 import re
+import time
+
+try:
+    import threading
+except ImportError:
+    import dummy_threading as threading
 
 import pytest
-from werkzeug.test import Client, EnvironBuilder
-from werkzeug.utils import cached_property
+from werkzeug.test import EnvironBuilder, run_wsgi_app
 from werkzeug.wrappers import BaseResponse
 
-from kudzu import RequestContext, LoggingMiddleware
+from kudzu import LoggingMiddleware, RequestContext, RequestContextMiddleware
 
 
 class HandlerMock(logging.Handler):
+    """Logging handler which saves all logged records."""
 
     def __init__(self):
         super(HandlerMock, self).__init__()
@@ -22,19 +27,28 @@ class HandlerMock(logging.Handler):
 
 
 def simple_app(environ, start_response):
-    status = '200 OK'
+    """Simple WSGI application"""
     data = 'Hello world!\n'
     response_headers = [('Content-type', 'text/plain'),
                         ('Content-length', '%s' % len(data))]
-    start_response(status, response_headers)
+    start_response('200 OK', response_headers)
     return [data]
 
 
 def error_app(environ, start_response):
-    raise Exception('Broken application')
+    """Simple WSGI application which always raises error."""
+    raise ZeroDivisionError
+
+
+def run_app(app, *args, **kwargs):
+    """Executes WSGI application and returns response instance."""
+    environ = EnvironBuilder(*args, **kwargs).get_environ()
+    response = run_wsgi_app(app, environ)
+    return BaseResponse(*response)
 
 
 class TestRequestContext(object):
+    """Tests `RequestContext` class."""
 
     def test_request_uri_wo_query(self):
         builder = EnvironBuilder(base_url='http://example.com/foo',
@@ -163,32 +177,154 @@ class TestRequestContext(object):
         assert context.log_vars['rsize'] == '-'
 
 
+class TestRequestContextStack(object):
+    """Tests access to thread local `RequestContext` instance."""
+
+    def setup_method(self, method):
+        RequestContext.reset()
+
+    def teardown_method(self, method):
+        RequestContext.reset()
+
+    def test_push_pop_context(self):
+        builder = EnvironBuilder()
+        context = RequestContext(builder.get_environ())
+        assert RequestContext.get() is None
+        context.push()
+        assert RequestContext.get() is context
+        context.pop()
+        assert RequestContext.get() is None
+
+    def test_push_pop_multiple_contexts(self):
+        builder = EnvironBuilder()
+        context1 = RequestContext(builder.get_environ())
+        context2 = RequestContext(builder.get_environ())
+        context1.push()
+        assert RequestContext.get() is context1
+        context2.push()
+        assert RequestContext.get() is context2
+        context2.pop()
+        assert RequestContext.get() is context1
+        context1.pop()
+        assert RequestContext.get() is None
+
+    def test_push_pop_context_multiple_times(self):
+        builder = EnvironBuilder()
+        context = RequestContext(builder.get_environ())
+        context.push()
+        assert RequestContext.get() is context
+        context.push()
+        assert RequestContext.get() is context
+        context.pop()
+        assert RequestContext.get() is context
+        context.pop()
+        assert RequestContext.get() is None
+
+    def test_pop_missing_context(self):
+        builder = EnvironBuilder()
+        context = RequestContext(builder.get_environ())
+        with pytest.raises(RuntimeError):
+            context.pop()
+        assert RequestContext.get() is None
+
+    def test_pop_wrong_context(self):
+        builder = EnvironBuilder()
+        context1 = RequestContext(builder.get_environ())
+        context2 = RequestContext(builder.get_environ())
+        context1.push()
+        with pytest.raises(RuntimeError):
+            context2.pop()
+        assert RequestContext.get() is context1
+
+    def test_threading(self):
+        builder = EnvironBuilder()
+        context1 = RequestContext(builder.get_environ())
+        context2 = RequestContext(builder.get_environ())
+        def target1():
+            assert RequestContext.get() is None
+            context1.push()
+            assert RequestContext.get() is context1
+            t2.start()
+            t2.join()
+            assert RequestContext.get() is context1
+        def target2():
+            assert RequestContext.get() is None
+            context2.push()
+            assert RequestContext.get() is context2
+        t1 = threading.Thread(target=target1)
+        t2 = threading.Thread(target=target2)
+        assert RequestContext.get() is None
+        t1.start()
+        t1.join()
+        assert RequestContext.get() is None
+
+
+class TestRequestContextMiddleware(object):
+    """Tests `RequestContextMiddleware` class."""
+
+    def test_context_is_none_after_request(self):
+        app = RequestContextMiddleware(simple_app)
+        assert RequestContext.get() is None
+        response = run_app(app, '/')
+        assert response.status_code == 200
+        assert RequestContext.get() is None
+
+    def test_context_is_none_after_error(self):
+        app = RequestContextMiddleware(error_app)
+        with pytest.raises(ZeroDivisionError):
+            run_app(app, '/')
+        assert RequestContext.get() is None
+
+    def test_context_is_set_during_request(self):
+        @RequestContextMiddleware
+        def app(environ, start_response):
+            context = RequestContext.get()
+            assert environ['kudzu.context'] is context
+            assert context.log_vars['uri'] == '/'
+            return simple_app(environ, start_response)
+        response = run_app(app, '/')
+        assert response.status_code == 200
+
+    def test_duplicate_request_context_raises(self):
+        app = RequestContextMiddleware(RequestContextMiddleware(simple_app))
+        with pytest.raises(RuntimeError):
+            run_app(app, '/')
+
+
 class TestLoggingMiddleware(object):
+    """Tests `LoggingMiddleware` class."""
 
-    @cached_property
-    def handler(self):
-        return HandlerMock()
+    def setup_method(self, method):
+        self.handler = HandlerMock()
+        self.logger = logging.getLogger('test_kudzu')
+        self.logger.addHandler(self.handler)
+        self.logger.level = logging.DEBUG
 
-    @cached_property
-    def logger(self):
-        logger = logging.Logger('test')
-        logger.addHandler(self.handler)
-        return logger
+    def teardown_method(self, method):
+        self.logger.removeHandler(self.handler)
 
-    @cached_property
-    def middleware(self):
-        rv = LoggingMiddleware(simple_app, self.logger)
+    def wrap_app(self, app):
+        rv = LoggingMiddleware(app, self.logger)
         # Fake response time in log messages
         rv.response_format = rv.response_format.replace('%(msecs)s', '7')
         rv.exception_format = rv.exception_format.replace('%(msecs)s', '7')
-        return rv
+        return RequestContextMiddleware(rv)
 
-    @cached_property
-    def client(self):
-        return Client(self.middleware, BaseResponse)
+    def test_middleware_is_created_with_detail_logger(self):
+        mw = LoggingMiddleware(simple_app)
+        assert mw.logger.name == 'wsgi'
+
+    def test_middleware_is_created_with_logger_name(self):
+        mw = LoggingMiddleware(simple_app, self.logger.name)
+        assert mw.logger is self.logger
+
+    def test_middleware_is_created_with_logger_instance(self):
+        mw = LoggingMiddleware(simple_app, self.logger)
+        assert mw.logger is self.logger
 
     def test_request_and_response_are_logged(self):
-        response = self.client.get('/')
+        app = self.wrap_app(simple_app)
+        response = run_app(app)
         assert response.status_code == 200
         assert len(self.handler.records) == 2
         assert self.handler.records[0].msg == \
@@ -197,10 +333,15 @@ class TestLoggingMiddleware(object):
             'Response status 200 in 7 ms, size 13 bytes'
 
     def test_exception_is_logged(self):
-        self.middleware.app = error_app
-        with pytest.raises(Exception):
-            self.client.get('/')
+        app = self.wrap_app(error_app)
+        with pytest.raises(ZeroDivisionError):
+            run_app(app)
         assert self.handler.records[0].msg == \
             'Request "GET HTTP/1.1 /" from -, user agent "-", referer -'
         assert self.handler.records[1].msg == 'Exception in 7 ms.'
         assert self.handler.records[1].exc_info is not None
+
+    def test_missing_request_context_raises(self):
+        app = LoggingMiddleware(simple_app, self.logger)
+        with pytest.raises(RuntimeError):
+            run_app(app)

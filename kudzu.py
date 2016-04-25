@@ -1,6 +1,11 @@
 
-import time
 import logging
+import time
+
+try:
+    import threading
+except ImportError:  # pragma: nocover
+    import dummy_threading as threading
 
 
 def _get_request_uri(environ):
@@ -30,9 +35,77 @@ class RequestContext(object):
     updated using arguments passed to `start_response` function.
     """
 
+    _local = threading.local()
+
     def __init__(self, environ):
         self._start_time = time.time()
         self._log_vars = self._environ_log_vars(environ)
+
+    def __enter__(self):
+        self.push()
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        self.pop()
+
+    @staticmethod
+    def get():
+        """Returns `RequestContext` for the current thread.
+
+        This static method returns `RequestContext` instance which
+        is globally available in each thread. Contexts are
+        managed in a stack (think of internal redirects) using
+        `RequestContext.push` and `RequestContext.pop` methods.
+
+        Returns `None` if the context stack is empty.
+        """
+        try:
+            stack = RequestContext._local.stack
+        except AttributeError:
+            stack = RequestContext._local.stack = []
+        if not stack:
+            return None
+        return stack[-1]
+
+    @staticmethod
+    def reset():
+        """Resets any `RequestContext` set for current thread.
+
+        Clears the whole context stack. This method should be avoided
+        in favor of `RequestContext.pop`. It is implemented mainly
+        to restore global state when testing.
+        """
+        try:
+            del RequestContext._local.stack
+        except AttributeError:
+            pass
+
+    def push(self):
+        """Sets this context for current thread.
+
+        Pushes this instance to the context stack.
+        """
+        try:
+            stack = RequestContext._local.stack
+        except AttributeError:
+            stack = RequestContext._local.stack = []
+        stack.append(self)
+
+    def pop(self):
+        """Unsets this context for current thread.
+
+        Pops this instance from the context stack. Raises `RuntimeError`
+        if stack is empty or this instance is not at the top.
+        """
+        try:
+            stack = RequestContext._local.stack
+        except AttributeError:
+            stack = RequestContext._local.stack = []
+        if not stack:
+            raise RuntimeError('RequestContext stack is empty.')
+        if stack[-1] is not self:
+            raise RuntimeError('Wrong RequestContext at top of stack.')
+        stack.pop()
 
     @property
     def log_vars(self):
@@ -93,16 +166,37 @@ class RequestContext(object):
         return rv
 
 
-def _wrap_start_response(context, start_response):
-    """Wraps start_response function for LoggingMiddleware."""
-    def start_response_wrapper(status, response_headers, exc_info=None):
-        context.set_status(status)
-        for name, value in response_headers:
-            if name.lower() == 'content-length':
-                context.set_response_size(value)
-                break
-        return start_response(status, response_headers, exc_info)
-    return start_response_wrapper
+class RequestContextMiddleware(object):
+    """WSGI middleware which creates context instance for each request.
+
+    This middleware creates a `RequestContext` instance for each request
+    and makes it globally in the current thread.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        if 'kudzu.context' in environ:
+            msg = ('RequestContext is already present in environ dictionary.'
+                   ' RequestContextMiddleware must be used only once.')
+            raise RuntimeError(msg)
+        context = environ['kudzu.context'] = RequestContext(environ)
+        mw_start_response = self._wrap_start_response(context, start_response)
+        with context:
+            rv = self.app(environ, mw_start_response)
+        return rv
+
+    def _wrap_start_response(self, context, start_response):
+        """Wraps start_response function."""
+        def start_response_wrapper(status, response_headers, exc_info=None):
+            context.set_status(status)
+            for name, value in response_headers:
+                if name.lower() == 'content-length':
+                    context.set_response_size(value)
+                    break
+            return start_response(status, response_headers, exc_info)
+        return start_response_wrapper
 
 
 class LoggingMiddleware(object):
@@ -124,28 +218,33 @@ class LoggingMiddleware(object):
             self.logger = logging.getLogger(logger)
 
     def __call__(self, environ, start_response):
-        context = RequestContext(environ)
-        self.log_request(context)
-        wrapped_start_response = _wrap_start_response(context, start_response)
         try:
-            rv = self.app(environ, wrapped_start_response)
+            context = environ['kudzu.context']
+        except KeyError:
+            msg = ('RequestContext is not present in environ dictionary.'
+                   ' LoggingMiddleware requires RequestContextMiddleware.')
+            raise RuntimeError(msg)
+        self.log_request(context)
+        try:
+            rv = self.app(environ, start_response)
         except:
             self.log_exception(context)
             raise
-        self.log_response(context)
+        else:
+            self.log_response(context)
         return rv
 
     def log_request(self, context):
-        """Logs request. Can be overriden in subclasses."""
+        """Logs request. Can be overridden in subclasses."""
         request_message = self.request_format % context.log_vars
         self.logger.info(request_message)
 
     def log_response(self, context):
-        """Logs response. Can be overriden in subclasses."""
+        """Logs response. Can be overridden in subclasses."""
         response_message = self.response_format % context.log_vars
         self.logger.info(response_message)
 
     def log_exception(self, context):
-        """Logs exception. Can be overriden in subclasses."""
+        """Logs exception. Can be overridden in subclasses."""
         exception_message = self.exception_format % context.log_vars
         self.logger.exception(exception_message)

@@ -3,7 +3,7 @@
 import logging
 from wsgiref.simple_server import make_server
 from wsgiref.validate import validator
-from kudzu import LoggingMiddleware
+from kudzu import LoggingMiddleware, RequestContextMiddleware
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -19,6 +19,7 @@ def example_app(environ, start_response):
 application = example_app
 application = validator(application)
 application = LoggingMiddleware(application)
+application = RequestContextMiddleware(application)
 application = validator(application)
 
 
