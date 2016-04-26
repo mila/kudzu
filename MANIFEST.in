@@ -1,1 +1,1 @@
-include README.rst LICENSE test_kudzu.py example.py
+include README.rst LICENSE test_kudzu.py tox.ini example.py
