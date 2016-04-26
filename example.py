@@ -12,12 +12,15 @@ Any installed WSGI server will do the job. You can try
 
 import logging
 import math
-from urlparse import parse_qs
+try:
+    from urllib.parse import parse_qs
+except ImportError:
+    from urlparse import parse_qs
 
 from kudzu import augment_logger, LoggingMiddleware, RequestContextMiddleware
 
 
-TEMPLATE = """
+TEMPLATE = u"""
 <form>
     <p>ln <input name="x" value="%(x).2f"> = %(y).2f</p>
     <p><input type="submit" value="Compute"></p>
@@ -36,9 +39,10 @@ def example_app(environ, start_response):
         y = math.log(x)
         logging.getLogger('example').info("ln %s = %s", x, y)
         status = '200 OK'
-        data = TEMPLATE % {'x': x, 'y': y}
+        response = (TEMPLATE % {'x': x, 'y': y})
     else:
-        status = data = '404 Not Found'
+        status = response = '404 Not Found'
+    data = response.encode('ascii')
     response_headers = [('Content-type', 'text/html'),
                         ('Content-length', '%s' % len(data))]
     start_response(status, response_headers)
@@ -61,5 +65,5 @@ application = RequestContextMiddleware(application)
 if __name__ == '__main__':
     from wsgiref.simple_server import make_server
     httpd = make_server('', 8000, application)
-    print "Serving HTTP on port 8000..."
+    print("Serving HTTP on port 8000...")
     httpd.serve_forever()

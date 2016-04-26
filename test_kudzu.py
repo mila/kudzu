@@ -20,7 +20,7 @@ class HandlerMock(logging.Handler):
     """Logging handler which saves all logged records."""
 
     def __init__(self):
-        super(HandlerMock, self).__init__()
+        logging.Handler.__init__(self)
         self.records = []
         self.messages = []
 
