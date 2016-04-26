@@ -1,1 +1,3 @@
-include README.rst LICENSE test_kudzu.py tox.ini example.py
+include README.rst LICENSE tox.ini example.py
+graft tests
+global-exclude *.py[co]
