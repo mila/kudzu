@@ -13,7 +13,6 @@ Any installed WSGI server will do the job. You can try
 import logging
 import math
 from urlparse import parse_qs
-from wsgiref.simple_server import make_server
 
 from kudzu import augment_logger, LoggingMiddleware, RequestContextMiddleware
 
@@ -60,6 +59,7 @@ application = RequestContextMiddleware(application)
 
 
 if __name__ == '__main__':
+    from wsgiref.simple_server import make_server
     httpd = make_server('', 8000, application)
     print "Serving HTTP on port 8000..."
     httpd.serve_forever()
