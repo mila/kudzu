@@ -11,10 +11,12 @@ except ImportError:  # pragma: nocover
 
 #: List of all variables from request context available for logging
 CONTEXT_VARS = (
-        # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#offsetof
-        'uri', 'method', 'user', 'addr', 'host', 'proto', 'uagent', 'referer',
-        # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#functions
-        'status', 'micros', 'msecs', 'time', 'ctime', 'rsize',
+    # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#offsetof
+    'uri', 'method', 'user', 'addr', 'host', 'proto', 'uagent', 'referer',
+    # http://uwsgi-docs.readthedocs.org/en/latest/LogFormat.html#functions
+    'status', 'micros', 'msecs', 'time', 'ctime', 'epoch', 'rsize',
+    # Custom
+    'rid',
 )
 
 
@@ -156,16 +158,18 @@ class RequestContext(object):
 
     def _environ_log_vars(self, environ):
         rv = dict.fromkeys(CONTEXT_VARS, '-')
+        get_env_var = environ.get
         rv.update({
             'uri': _get_request_uri(environ),
             'method': environ['REQUEST_METHOD'],
-            'user': environ.get('REMOTE_USER', '-'),
-            'addr': environ.get('REMOTE_ADDR', '-'),
-            'host': environ.get('HTTP_HOST', environ['SERVER_NAME']),
+            'user': get_env_var('REMOTE_USER', '-'),
+            'addr': get_env_var('REMOTE_ADDR', '-'),
+            'host': get_env_var('HTTP_HOST', environ['SERVER_NAME']),
             'proto': environ['SERVER_PROTOCOL'],
-            'uagent': environ.get('HTTP_USER_AGENT', '-'),
-            'referer': environ.get('HTTP_REFERER', '-'),
+            'uagent': get_env_var('HTTP_USER_AGENT', '-'),
+            'referer': get_env_var('HTTP_REFERER', '-'),
             'time': str(int(self._start_time)),
             'ctime': time.ctime(self._start_time),
+            'rid': get_env_var('HTTP_X_REQUEST_ID', '-'),
         })
         return rv

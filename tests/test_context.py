@@ -66,7 +66,7 @@ class TestRequestContext(object):
         assert context.log_vars['proto'] == 'HTTP/1.1'
 
     def test_user_agent(self):
-        builder = EnvironBuilder(headers={'USER_AGENT': 'testbot'})
+        builder = EnvironBuilder(headers={'User-Agent': 'testbot'})
         context = RequestContext(builder.get_environ())
         assert context.log_vars['uagent'] == 'testbot'
 
@@ -76,7 +76,7 @@ class TestRequestContext(object):
         assert context.log_vars['uagent'] == '-'
 
     def test_referer(self):
-        builder = EnvironBuilder(headers={'REFERER': 'http://localhost'})
+        builder = EnvironBuilder(headers={'Referer': 'http://localhost'})
         context = RequestContext(builder.get_environ())
         assert context.log_vars['referer'] == 'http://localhost'
 
@@ -123,7 +123,7 @@ class TestRequestContext(object):
     def test_ctime(self):
         builder = EnvironBuilder()
         context = RequestContext(builder.get_environ())
-        pattern = r'\w{3} \w{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}'
+        pattern = r'^\w{3} \w{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$'
         assert re.match(pattern, context.log_vars['ctime'])
 
     def test_response_size(self):
@@ -143,6 +143,11 @@ class TestRequestContext(object):
         context = RequestContext(builder.get_environ())
         # No Content-Length header
         assert context.log_vars['rsize'] == '-'
+
+    def test_request_id(self):
+        builder = EnvironBuilder(headers={'X-Request-ID': 'xyz'})
+        context = RequestContext(builder.get_environ())
+        assert context.log_vars['rid'] == 'xyz'
 
 
 class TestRequestContextStack(object):
@@ -208,7 +213,6 @@ class TestRequestContextStack(object):
         builder = EnvironBuilder()
         context1 = RequestContext(builder.get_environ())
         context2 = RequestContext(builder.get_environ())
-
         def target1():
             assert RequestContext.get() is None
             context1.push()
@@ -216,12 +220,10 @@ class TestRequestContextStack(object):
             t2.start()
             t2.join()
             assert RequestContext.get() is context1
-
         def target2():
             assert RequestContext.get() is None
             context2.push()
             assert RequestContext.get() is context2
-
         t1 = threading.Thread(target=target1)
         t2 = threading.Thread(target=target2)
         assert RequestContext.get() is None
