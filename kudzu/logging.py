@@ -35,7 +35,7 @@ class RequestContextFilter(object):
         return True
 
 
-BASIC_FORMAT = "[%(addr)s] %(levelname)s:%(name)s:%(message)s"
+BASIC_FORMAT = "[%(addr)s|%(rid)s] %(levelname)s:%(name)s:%(message)s"
 
 
 def kudzify_handler(handler, format=BASIC_FORMAT):

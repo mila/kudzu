@@ -76,7 +76,7 @@ logging.basicConfig(filename='example.log', level=logging.DEBUG)
 #
 # More contextual information can be added, see `kudzu.CONTEXT_VARS`
 # for list of all available placeholders.
-kudzify_logger(format="[%(addr)s|%(rid)s] %(levelname)s:%(message)s")
+kudzify_logger(format='[%(addr)s|%(rid)s] %(levelname)s:%(message)s')
 
 
 if __name__ == '__main__':
