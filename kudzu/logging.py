@@ -19,7 +19,7 @@ class RequestContextFilter(object):
     `RequestContextFilter` depends on `RequestContextMiddleware`
     to make `RequestContext` globally available.
 
-    Functions `augment_handler` and `augment_logger` simplify configuration
+    Functions `kudzify_handler` and `kudzify_logger` simplify configuration
     of loggers with this instances of this class.
     """
 
@@ -38,7 +38,7 @@ class RequestContextFilter(object):
 BASIC_FORMAT = "[%(addr)s] %(levelname)s:%(name)s:%(message)s"
 
 
-def augment_handler(handler, format=BASIC_FORMAT):
+def kudzify_handler(handler, format=BASIC_FORMAT):
     """Extends format string of a handler by request context placeholders.
 
     Takes a logging handler instance format string with `CONTEXT_VARS`
@@ -55,13 +55,13 @@ def augment_handler(handler, format=BASIC_FORMAT):
     handler.addFilter(context_filter)
 
 
-def augment_logger(logger=None, format=BASIC_FORMAT):
+def kudzify_logger(logger=None, format=BASIC_FORMAT):
     """Extends format string of a logger by request context placeholders.
 
-    It calls `augment_handler` on each handler registered to the given
+    It calls `kudzify_handler` on each handler registered to the given
     logger. So this function must be called after handlers are configured.
     """
     if not isinstance(logger, logging.Logger):
         logger = logging.getLogger(logger)
     for handler in logger.handlers:
-        augment_handler(handler, format=format)
+        kudzify_handler(handler, format=format)

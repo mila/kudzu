@@ -8,7 +8,7 @@ import pytest
 from werkzeug.test import EnvironBuilder, run_wsgi_app
 from werkzeug.wrappers import BaseResponse
 
-from kudzu import RequestContext, LoggingMiddleware, \
+from kudzu import kudzify_app, RequestContext, LoggingMiddleware, \
     RequestContextMiddleware, RequestIDMiddleware
 
 
@@ -222,3 +222,24 @@ class TestRequestIDMiddleware(object):
         response = run_app(app)
         assert response.status_code == 200
         assert len(response.headers.getlist('X-Request-ID')) == 2
+
+
+class TestKudzifyApp(object):
+    """Tests `kudzify_app` function"""
+
+    def setup_method(self, method):
+        self.handler = HandlerMock()
+        self.logger = logging.getLogger('test_middleware')
+        self.logger.addHandler(self.handler)
+        self.logger.level = logging.DEBUG
+
+    def test_middleware_combindation(self):
+        def test_app(environ, start_response):
+            assert 'kudzu.context' in environ
+            assert 'HTTP_X_REQUEST_ID' in environ
+            return simple_app(environ, start_response)
+        app = kudzify_app(test_app, logger=self.logger)
+        response = run_app(app)
+        assert response.status_code == 200
+        assert len(self.handler.records) == 2
+        assert 'X-Request-ID' in response.headers

@@ -177,3 +177,13 @@ class RequestIDMiddleware(object):
                 header = ('X-Request-ID', self.request_id)
                 response_headers.append(header)
             return self.start_response(status, response_headers, exc_info)
+
+
+def kudzify_app(app, logger='wsgi', accept_request_id=True,
+                send_request_id=True):
+    """Helper, which applies all Kudzu middlewares to the given application"""
+    app = LoggingMiddleware(app, logger=logger)
+    app = RequestContextMiddleware(app)
+    app = RequestIDMiddleware(app, accept_request_id=accept_request_id,
+                              send_request_id=send_request_id)
+    return app

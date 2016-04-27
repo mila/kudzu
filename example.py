@@ -3,13 +3,14 @@
 Run `python example.py`, visit http://localhost:8000/, and follow
 log records written to `example.log` file.
 
-Requests and responses should be logged. Records emitted by all
-loggers are prefixed by remote address and random request ID.
-The generated request ID is send to the client in X-Request-ID header.
+Requests and responses are be logged. All emitted log records are
+written with remote address and random request ID and the generated
+request ID is send to the client in X-Request-ID header.
 
-
-Any installed WSGI server will do the job. You can try
-`gunicorn example:application` or `uwsgi --http :8000 --wsgi-file example.py`
+This is a simple WSGI application without any dependencies.
+It can be run using any installed WSGI server.
+For example Gunicorn `gunicorn example:application`
+or uWSGI `uwsgi --http :8000 --wsgi-file example.py`.
 """
 
 import logging
@@ -19,8 +20,7 @@ try:
 except ImportError:
     from urlparse import parse_qs
 
-from kudzu import augment_logger, LoggingMiddleware, RequestIDMiddleware, \
-    RequestContextMiddleware
+from kudzu import kudzify_app, kudzify_logger
 
 
 TEMPLATE = u"""
@@ -40,33 +40,40 @@ def example_app(environ, start_response):
         q = parse_qs(environ.get('QUERY_STRING', '')).get('x')
         x = float(q[0]) if q else 1
         y = math.log(x)
-        # Example log message will be records with remote address
+        # Example log message will be recorded with remote address
         # and request ID.
         logging.getLogger('example').info("ln %s = %s", x, y)
         status = '200 OK'
         response = (TEMPLATE % {'x': x, 'y': y})
     else:
         status = response = '404 Not Found'
-    data = response.encode('ascii')
     response_headers = [('Content-type', 'text/html'),
-                        ('Content-length', '%s' % len(data))]
+                        ('Content-length', '%s' % len(response))]
     start_response(status, response_headers)
-    return [data]
+    return [response.encode('ascii')]
+
+
+# Apply Kudzu middlewares to the application.
+#
+# Function `kudzify_app` is only a helper which applies three wrappers:
+# `LoggingMiddleware`, `RequestContextMiddleware` and `RequestIDMiddleware`.
+application = kudzify_app(example_app)
 
 # Configure Python logging to write to `example.log` file.
+#
+# This is only for demonstration purposes, in real application
+# any logging handler can be used.
 logging.basicConfig(filename='example.log', level=logging.DEBUG)
-# Add remote address and request ID to all log records.
-# See `kudzu.CONTEXT_VARS` for available placeholders.
-augment_logger(format="[%(addr)s|%(rid)s] %(levelname)s:%(message)s")
 
-application = example_app
-# Log all requests and responses.
-application = LoggingMiddleware(application)
-# Construct RequestContext for each request. Required
-# by both `LoggingMiddleware` and `augment_logger`.
-application = RequestContextMiddleware(application)
-# Add random request ID to all requets and responses.
-application = RequestIDMiddleware(application)
+# Prefix all log records by remote address and request ID.
+#
+# Function `kudzify_logger` is only a helper which adds
+# `RequestContextFilter` to all handlers registered on root logger.
+#
+# More contextual information can be added, see `kudzu.CONTEXT_VARS`
+# for list of all available placeholders.
+kudzify_logger(format="[%(addr)s|%(rid)s] %(levelname)s:%(message)s")
+
 
 if __name__ == '__main__':
     from wsgiref.simple_server import make_server

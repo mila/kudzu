@@ -5,7 +5,7 @@ import logging
 
 from werkzeug.test import EnvironBuilder
 
-from kudzu import RequestContext, augment_handler, augment_logger
+from kudzu import RequestContext, kudzify_handler, kudzify_logger
 
 
 class HandlerMock(logging.Handler):
@@ -32,8 +32,8 @@ class TestRequestContextFilter(object):
     def teardown_method(self, method):
         self.logger.removeHandler(self.handler)
 
-    def test_augment_handler(self):
-        augment_handler(self.handler, format=self.format)
+    def test_kudzify_handler(self):
+        kudzify_handler(self.handler, format=self.format)
         builder = EnvironBuilder()
         with RequestContext(builder.get_environ()):
             self.logger.info('Hello %s', 'Kudzu')
@@ -41,8 +41,8 @@ class TestRequestContextFilter(object):
         assert self.handler.messages[0] == \
             '["GET HTTP/1.1 /" from -] Hello Kudzu'
 
-    def test_augment_logger(self):
-        augment_logger(self.logger, format=self.format)
+    def test_kudzify_logger(self):
+        kudzify_logger(self.logger, format=self.format)
         builder = EnvironBuilder()
         with RequestContext(builder.get_environ()):
             self.logger.info('Hello %s', 'Kudzu')
@@ -50,8 +50,8 @@ class TestRequestContextFilter(object):
         assert self.handler.messages[0] == \
             '["GET HTTP/1.1 /" from -] Hello Kudzu'
 
-    def test_augment_logger_by_name(self):
-        augment_logger(self.logger.name, format=self.format)
+    def test_kudzify_logger_by_name(self):
+        kudzify_logger(self.logger.name, format=self.format)
         builder = EnvironBuilder()
         with RequestContext(builder.get_environ()):
             self.logger.info('Hello %s', 'Kudzu')
@@ -60,13 +60,13 @@ class TestRequestContextFilter(object):
             '["GET HTTP/1.1 /" from -] Hello Kudzu'
 
     def test_log_wo_context(self):
-        augment_logger(self.logger, format=self.format)
+        kudzify_logger(self.logger, format=self.format)
         self.logger.info('Hello %s', 'Kudzu')
         assert len(self.handler.messages) == 1
         assert self.handler.messages[0] == '["- - -" from -] Hello Kudzu'
 
     def test_log_w_context(self):
-        augment_logger(self.logger, format=self.format)
+        kudzify_logger(self.logger, format=self.format)
         builder = EnvironBuilder(path='/foo',
                                  environ_base={'REMOTE_ADDR': '127.0.0.1'})
         with RequestContext(builder.get_environ()):
