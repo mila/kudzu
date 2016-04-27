@@ -1,24 +1,28 @@
 
 from setuptools import setup
 
+from kudzu import __version__ as version
+
 
 url = 'https://github.com/mila/kudzu'
 
-try:
-    with open('README.rst', 'rb') as readme:
-        long_description = readme.read().decode('utf-8')
-except IOError:
-    long_description = 'See %s' % url
+def read_description():
+    try:
+        with open('README.rst', 'rb') as readme:
+            rv = readme.read().decode('utf-8')
+    except IOError:
+        rv = 'See %s' % url
+    return rv
 
 
 setup(
     name='Kudzu',
-    version='0.1-dev',
+    version=version,
     url=url,
     author='Miloslav Pojman',
     author_email='miloslav.pojman@gmail.com',
     description='Set of utilities for better logging in WSGI applications',
-    long_description=long_description,
+    long_description=read_description(),
     license='BSD',
     packages=['kudzu'],
     classifiers=[
