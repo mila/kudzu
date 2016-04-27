@@ -29,7 +29,7 @@ class LoggingMiddleware(object):
                       '"%(uagent)s", referer %(referer)s')
     response_format = ('Response status %(status)s in %(msecs)s ms, '
                        'size %(rsize)s bytes')
-    exception_format = 'Exception in %(msecs)s ms.'
+    exception_format = 'Exception in %(msecs)s ms'
 
     def __init__(self, app, logger='wsgi'):
         self.app = app

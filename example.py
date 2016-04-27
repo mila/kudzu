@@ -20,7 +20,7 @@ try:
 except ImportError:
     from urlparse import parse_qs
 
-from kudzu import kudzify_app, kudzify_logger
+from kudzu import kudzify_app, kudzify_logger, get_request_id
 
 
 TEMPLATE = u"""
@@ -28,6 +28,7 @@ TEMPLATE = u"""
     <p>ln <input name="x" value="%(x).2f"> = %(y).2f</p>
     <p><input type="submit" value="Compute"></p>
 </form>
+<p><small>Request ID: %(rid)s</small></p>
 """
 
 
@@ -44,7 +45,10 @@ def example_app(environ, start_response):
         # and request ID.
         logging.getLogger('example').info("ln %s = %s", x, y)
         status = '200 OK'
-        response = (TEMPLATE % {'x': x, 'y': y})
+        # Request is globally available in each thread.
+        # Real applications can send when accessing other components.
+        request_id = get_request_id()
+        response = (TEMPLATE % {'x': x, 'y': y, 'rid': request_id})
     else:
         status = response = '404 Not Found'
     response_headers = [('Content-type', 'text/html'),

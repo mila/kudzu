@@ -12,7 +12,7 @@ except ImportError:
 import pytest
 from werkzeug.test import EnvironBuilder
 
-from kudzu import RequestContext
+from kudzu import get_remote_addr, get_request_id, RequestContext
 
 
 class TestRequestContext(object):
@@ -230,3 +230,36 @@ class TestRequestContextStack(object):
         t1.start()
         t1.join()
         assert RequestContext.get() is None
+
+
+class TestContextGetters(object):
+
+    def test_remote_addr_is_returned(self):
+        builder = EnvironBuilder(environ_base={'REMOTE_ADDR': '127.0.0.1'})
+        context = RequestContext(builder.get_environ())
+        with context:
+            assert get_remote_addr() == '127.0.0.1'
+
+    def test_remote_addr_is_not_returned_wo_context(self):
+        assert get_remote_addr() is None
+
+    def test_remote_addr_is_not_returned_if_not_kwown(self):
+        builder = EnvironBuilder()
+        context = RequestContext(builder.get_environ())
+        with context:
+            assert get_remote_addr() is None
+
+    def test_request_id_is_returned(self):
+        builder = EnvironBuilder(headers={'X-Request-ID': 'xyz'})
+        context = RequestContext(builder.get_environ())
+        with context:
+            assert get_request_id() == 'xyz'
+
+    def test_request_id_is_not_returned_wo_context(self):
+        assert get_request_id() is None
+
+    def test_request_id_is_not_returned_if_not_kwown(self):
+        builder = EnvironBuilder()
+        context = RequestContext(builder.get_environ())
+        with context:
+            assert get_request_id() is None

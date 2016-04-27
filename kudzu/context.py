@@ -131,6 +131,22 @@ class RequestContext(object):
         })
         return rv
 
+    @property
+    def remote_addr(self):
+        """Remote address of this context request"""
+        addr = self._log_vars['addr']
+        if addr == '-':
+            return None
+        return addr
+
+    @property
+    def request_id(self):
+        """Request ID  of this context request"""
+        rid = self._log_vars['rid']
+        if rid == '-':
+            return None
+        return rid
+
     def set_status(self, status):
         """Sets response status line.
 
@@ -173,3 +189,27 @@ class RequestContext(object):
             'rid': get_env_var('HTTP_X_REQUEST_ID', '-'),
         })
         return rv
+
+
+def get_remote_addr():
+    """Returns remote address of the the current thread request.
+
+    Returns None, if no `RequestContext` was pushed at the stack
+    or if remote address is not known.
+    """
+    context = RequestContext.get()
+    if context is None:
+        return None
+    return context.remote_addr
+
+
+def get_request_id():
+    """Returns request ID of the the current thread request.
+
+    Returns None, if no `RequestContext` was pushed at the stack
+    or if request ID is not known.
+    """
+    context = RequestContext.get()
+    if context is None:
+        return None
+    return context.request_id

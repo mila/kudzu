@@ -94,7 +94,7 @@ class TestLoggingMiddleware(object):
             run_app(app)
         assert self.handler.records[0].msg == \
             'Request "GET HTTP/1.1 /" from - "-", referer -'
-        assert self.handler.records[1].msg == 'Exception in 7 ms.'
+        assert self.handler.records[1].msg == 'Exception in 7 ms'
         assert self.handler.records[1].exc_info is not None
 
     def test_missing_request_context_raises(self):
