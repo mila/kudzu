@@ -1,4 +1,4 @@
-Kudzu - set of utilities for better logging in Python applications
+Kudzu - set of utilities for better logging in WSGI applications
 ==================================================================
 
 Kudzu provides WSGI middleware and logging handlers which:
