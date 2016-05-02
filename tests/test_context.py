@@ -123,7 +123,7 @@ class TestRequestContext(object):
     def test_ctime(self):
         builder = EnvironBuilder()
         context = RequestContext(builder.get_environ())
-        pattern = r'^\w{3} \w{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$'
+        pattern = r'^\w{3} \w{3} [\d ]\d \d{2}:\d{2}:\d{2} \d{4}$'
         assert re.match(pattern, context.log_vars['ctime'])
 
     def test_response_size(self):
