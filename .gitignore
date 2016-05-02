@@ -6,3 +6,11 @@ build/
 dist/
 .tox/
 example.log
+
+.pybuild/
+debian/files
+debian/*.log
+debian/*.debhelper
+debian/*.substvars
+debian/python-kudzu/
+debian/python3-kudzu/
