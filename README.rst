@@ -12,7 +12,7 @@ Kudzu provides WSGI middleware and logging handlers which:
 
 
 Kudzu is framework independent and it is compatible with both
-Python 2 (tested with 2.6 and 2.7) and Python 3 (tested with 3.3 and 3.4).
+Python 2 (tested with 2.6 and 2.7) and Python 3 (tested with 3.3 - 3.6).
 
 
 Installation
